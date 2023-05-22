@@ -1,18 +1,17 @@
 import asyncio
 import random
 import aiohttp
-from aiohttp import ClientConnectorError, ClientResponseError
+from aiohttp import ClientConnectorError
 
 from utils import SendRequestsFront
 
 async def make_request(url: str, front: SendRequestsFront):
-    time = random.uniform(0.7, 1.5)
+    time = random.uniform(1, 1.7)
     await asyncio.sleep(time)
     index = front.send_box.update(f" ~  {url:<30}\t-")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
-                #response = await resp.text()
                 if resp.status == 200:
                     front.send_box.update(f" \u2714  {url:<30}\tOK", index=index)
                     return (url, 200)
@@ -46,14 +45,16 @@ async def make_requests(service, name, front: SendRequestsFront):
         "https://twitter.com"
     ]
 
-    
+
     num_semaphore = 4
     sem = asyncio.Semaphore(num_semaphore)
     tasks = []
+    front.logger.info("Preparando tasks assincronas")
     for url in sites:
         new_task = asyncio.create_task(safe_request(sem, url, front), name=url)
         tasks.append(asyncio.ensure_future(new_task))
 
+    front.logger.warning(f"Foram criados {len(tasks)} Jobs, executando...")
     front.pbar_box.total = len(tasks)
     results = []
     for future_task in asyncio.as_completed(tasks):
@@ -67,8 +68,7 @@ async def make_requests(service, name, front: SendRequestsFront):
             f"Avarage:\t{front.pbar_box.rate}s"
         ]
         stats = [
-            f"fileFinished Jobs:\t{front.pbar_box.finished}",
-            #f"Running Jobs:\t{len(sem.)}",
+            f"Finished Jobs:\t{front.pbar_box.finished}",
             f"In Queue:\t{front.pbar_box.total - front.pbar_box.finished}",
             "",
             f"Service: {service}",

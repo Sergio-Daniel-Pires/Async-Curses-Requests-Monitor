@@ -29,8 +29,6 @@ class Box(ABC):
 
     @abstractmethod
     def update(self, *args):
-        #...
-        #self.show()
         ...
 
 class StrBox(Box):
@@ -76,7 +74,6 @@ class StrBox(Box):
                 result.append(new_string)
 
             return result
-
 
     def show(self):
         list_lines = self.lines
@@ -171,7 +168,6 @@ class SendRequestsFront(logging.Handler):
         logging.addLevelName(logging.INFO, 'info')
         logging.addLevelName(logging.ERROR, 'error')
         logging.addLevelName(logging.WARN, 'warn')
-
 
     def initialize(self):
         # Start Screen
@@ -281,7 +277,6 @@ class SendRequestsFront(logging.Handler):
 
     def emit(self, record):
         try:
-            #msg = self.format(record)
             msg = self.formatter.format(record)
             window = self.logs_box
             fs = "\n%s"
