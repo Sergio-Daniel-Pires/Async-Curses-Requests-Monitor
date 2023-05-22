@@ -6,6 +6,7 @@ from math import floor
 from abc import abstractmethod, ABC
 import logging
 import re
+from datetime import datetime
 
 class Box(ABC):
     title: str
@@ -112,15 +113,28 @@ class StrBox(Box):
 class PBarBox(Box):
     finished: int
     total: int
+    started: datetime
+    elapsed: datetime
+    rate: float         # files/s
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.finished = 0
         self.total = 0
 
+        time_now = datetime.now()
+        self.elapsed = int((time_now - self.started).total_seconds())
+        self.rate = 0
+        self.remaining = 0
+
     def update(self, finished: int, total: int):
         self.finished = finished
         self.total = total
+
+        time_now = datetime.now()
+        self.elapsed = int((time_now - self.started).total_seconds())
+        self.rate = round(self.finished / self.elapsed, 2) if self.finished and self.elapsed else "0"
+        self.remaining = int((self.total - self.finished) * self.rate)
         self.show()
 
     def show(self):
@@ -142,10 +156,12 @@ class SendRequestsFront(logging.Handler):
     bash_height: int
 
     logger: logging.Logger
+    started: datetime
 
     def __init__(self):
         self.update = True
         self.stdscr = None
+        self.started = datetime.now()
         self.initialize()
         self.make_display()
 
@@ -155,6 +171,7 @@ class SendRequestsFront(logging.Handler):
         logging.addLevelName(logging.INFO, 'info')
         logging.addLevelName(logging.ERROR, 'error')
         logging.addLevelName(logging.WARN, 'warn')
+
 
     def initialize(self):
         # Start Screen
@@ -238,7 +255,8 @@ class SendRequestsFront(logging.Handler):
         # Logging
         local = {
             "logs_box": StrBox(height=log_box_h, width=left_side, x=0, y=0, title="Logging", re_patterns=self.re_patterns.get('logs_box', [])),
-            "pbar_box": PBarBox(height=pbar_box_h, width=left_side, x=0, y=log_box_h, title="Progresso", re_patterns=self.re_patterns.get('pbar_box', [])),
+            "pbar_box": PBarBox(height=pbar_box_h, width=left_side, x=0, y=log_box_h, title="Progresso",
+                                re_patterns=self.re_patterns.get('pbar_box', []), started=self.started),
 
             # Arquivos
             "send_box": StrBox(height=files_box_h, width=right_side, x=left_side, y=0, title="Service tasks", re_patterns=self.re_patterns.get('send_box', [])),
