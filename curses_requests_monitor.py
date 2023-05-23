@@ -45,7 +45,6 @@ async def make_requests(service, name, front: SendRequestsFront):
         "https://twitter.com"
     ]
 
-
     num_semaphore = 4
     sem = asyncio.Semaphore(num_semaphore)
     tasks = []
@@ -77,15 +76,10 @@ async def make_requests(service, name, front: SendRequestsFront):
         front.info_box.update(info)
         front.stats_box.update(stats)
         results.append(result)
-    
+
 async def main():
     front = SendRequestsFront()
-    requests = asyncio.create_task(make_requests('Get sites infos', 'files', front=front))
-    auto_update = asyncio.create_task(front.auto_update())
-    try:
-        done, pending = await asyncio.wait({auto_update, requests}, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        front.cleanup()
+    await front.monitor_decorator(make_requests)("Get sites infos", "files", front)
 
 if __name__ == "__main__":
     asyncio.run(main())

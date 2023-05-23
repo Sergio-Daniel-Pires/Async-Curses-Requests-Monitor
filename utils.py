@@ -61,51 +61,68 @@ class StrBox(Box):
             def substitute(match):
                 start = match.start()
                 end = match.end()
-                result.append(string[cls.last_end:start])
+                for x in (string[cls.last_end:start]).split(' '):
+                    result.append((x, 0))
+
                 result.append((string[start:end], replacement[cls.replacement_index]))
                 cls.last_end = end
                 cls.replacement_index = (cls.replacement_index + 1) % len(replacement)
                 return ''
-
-            new_string = re.sub(combined_pattern, substitute, string)
-            result.append(string[cls.last_end:])
-
-            if not result:
-                result.append(new_string)
+            
+            re.sub(combined_pattern, substitute, string)
+            for x in (string[cls.last_end:]).split(' '):
+                result.append((x, 0))
 
             return result
 
     def show(self):
-        list_lines = self.lines
-        if len(list_lines) > self.height - 2:
-            list_lines = list_lines[len(list_lines)-self.height+2:]
-        
-        self.box.addstr(1, 1, '')
-        for idx, line in enumerate(list_lines):
-            attr = ...
-            c_lines = [line]
-            colored = False
+        all_lines = self.lines
+        box_width = self.width
+
+        self.box.addstr(1, 1, '') # Initialize strings in box
+        real_lines = []
+        for line in reversed(all_lines):
+            list_line = []
             for pattern, colors in self.re_patterns:
                 matched = re.match(pattern, line)
                 if matched is not None:
                     groups = matched.groups()
                     if len(groups) > 0:
-                        c_lines = self.TextProcessor.replace_with_index(groups, colors, line)
-                        colored = True
+                        list_line = self.TextProcessor.replace_with_index(groups, colors, line)
                         break
+            
+            if list_line == []:
+                list_line = [(word, 0) for word in line.split(' ')]
 
-            # Init line
-            if colored:
-                self.box.addstr(idx+1, 1, '')
-                for line in c_lines:
-                    args = (line, 0)
-                    if type(line) is tuple:
-                        line, attr = line[0], curses.color_pair(line[1])
-                        args = (line, attr)
-                    
-                    self.box.addstr(*args)
-            else:
-                self.box.addstr(idx+1, 1, line)
+            lenght = 0
+
+            new_lines = [[]]
+            for word_obj in list_line:
+                lenght += (len(word_obj[0]) + 1)
+                
+                if lenght > box_width - 5:
+                    lenght = len(word_obj[0])
+                    word_obj = ("|--\t" + word_obj[0], word_obj[1])
+                    new_lines.append([word_obj])
+                else:
+                    new_lines[-1].append(word_obj)
+            
+            real_lines += reversed(new_lines)
+
+            if len(real_lines) > self.height - 2:
+                break
+        
+        for idx, list_line in enumerate(reversed(real_lines)):
+            if idx + 1 > self.height - 2:
+                break
+
+            self.box.addstr(idx+1, 1, '')
+            for word in list_line:
+                line, color = word
+                if color:
+                   color =  curses.color_pair(color)
+
+                self.box.addstr(line + ' ', color)
 
 class PBarBox(Box):
     finished: int
@@ -158,6 +175,14 @@ class SendRequestsFront(logging.Handler):
     def __init__(self):
         self.update = True
         self.stdscr = None
+
+        # Boxes
+        self.logs_box = None
+        self.pbar_box = None
+        self.send_box = None
+        self.stats_box = None
+        self.info_box = None
+
         self.started = datetime.now()
         self.initialize()
         self.make_display()
@@ -199,7 +224,12 @@ class SendRequestsFront(logging.Handler):
         self.logger.addHandler(self)
 
     def cleanup(self):
-        self.make_display()
+        try:
+            self.logger.warning("Aperte qualquer tecla para sair")
+            self.make_display()
+        except:
+            logging.error("Erro ao executar ultima atualizacao do display")
+
         self.update = False
         if self.stdscr:
             self.stdscr.getch()
@@ -232,6 +262,13 @@ class SendRequestsFront(logging.Handler):
         
     def make_display(self) -> None:
         bash_height, bash_width = self.stdscr.getmaxyx()
+        if (bash_height, bash_width) == (self.bash_height, self.bash_width):
+            attributes = [self.logs_box, self.pbar_box, self.send_box, self.stats_box, self.info_box]
+            if None not in attributes:
+                for attribute in attributes:
+                    attribute.box.refresh()
+                
+                return
 
         left_side = floor(bash_width*.6)
         right_side = bash_width - left_side
@@ -265,12 +302,13 @@ class SendRequestsFront(logging.Handler):
             new_object = local[new_object_name]
             if new_object_name in self.__dict__:
                 get_object = self.__getattribute__(new_object_name)
-                if type(get_object) is StrBox:
-                    args = (get_object.lines,)
-                else:
-                    args = (get_object.finished, get_object.total)
+                if get_object is not None:
+                    if type(get_object) is StrBox:
+                        args = (get_object.lines,)
+                    else:
+                        args = (get_object.finished, get_object.total)
 
-                new_object.update(*args)
+                    new_object.update(*args)
             
             self.__setattr__(new_object_name, new_object)
             self.__getattribute__(new_object_name).box.refresh()
@@ -288,3 +326,14 @@ class SendRequestsFront(logging.Handler):
             raise
         except:
             self.handleError(record)
+
+    def monitor_decorator(self, func):
+        async def wrapper(*arg, **kw):
+            requests = asyncio.create_task(func(*arg, **kw))
+            auto_update = asyncio.create_task(self.auto_update())
+            try:
+                done, pending = await asyncio.wait({auto_update, requests}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                self.cleanup()
+
+        return wrapper
